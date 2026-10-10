@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun NovaCutApp(viewModel: EditorViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Crossfade(
         targetState = uiState.currentScreen,
@@ -58,6 +59,14 @@ fun NovaCutApp(viewModel: EditorViewModel) {
                     isCloudSyncing = uiState.isCloudSyncing,
                     onOpenProject = { viewModel.openProject(it) },
                     onCreateNewProject = { title, aspect -> viewModel.createNewProject(title, aspect) },
+                    onImportVideosAndCreateProject = { uris ->
+                        viewModel.createNewProjectFromUris(
+                            context = context,
+                            uris = uris,
+                            title = "Project " + (uiState.projects.size + 1),
+                            aspectRatio = com.example.model.AspectRatio.ASPECT_9_16
+                        )
+                    },
                     onDuplicateProject = { viewModel.duplicateProject(it) },
                     onDeleteProject = { viewModel.deleteProject(it) },
                     onOpenCloudSync = { viewModel.navigateTo(ScreenDestination.CLOUD_SYNC) }
@@ -76,7 +85,7 @@ fun NovaCutApp(viewModel: EditorViewModel) {
                 ExportScreen(
                     project = uiState.currentProject,
                     renderStatus = uiState.renderStatus,
-                    onStartRender = { viewModel.startExport(it) },
+                    onStartRender = { profile -> viewModel.startExport(context, profile) },
                     onBack = {
                         if (uiState.currentProject != null) {
                             viewModel.navigateTo(ScreenDestination.STUDIO_EDITOR)

@@ -1,5 +1,12 @@
 package com.example.ui.components
 
+import android.graphics.SurfaceTexture
+import android.media.MediaPlayer
+import android.media.PlaybackParams
+import android.net.Uri
+import android.os.Build
+import android.view.Surface
+import android.view.TextureView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -23,18 +30,23 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,13 +54,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
@@ -56,6 +67,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.example.R
 import com.example.model.AspectRatio as NovaAspectRatio
 import com.example.model.ColorGradeSettings
@@ -63,6 +75,7 @@ import com.example.model.LutPreset
 import com.example.model.Project
 import com.example.model.SubtitleItem
 import com.example.model.SubtitleStyle
+import com.example.model.TrackType
 import com.example.ui.theme.StudioBorder
 import com.example.ui.theme.StudioCardElevated
 import com.example.ui.theme.StudioCyan
@@ -82,6 +95,7 @@ fun CanvasPreview(
     onTogglePlay: () -> Unit,
     onStepFrame: (Boolean) -> Unit,
     onAspectRatioClick: () -> Unit,
+    onAddMediaClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showSafeGuides by remember { mutableStateOf(false) }
@@ -122,37 +136,37 @@ fun CanvasPreview(
                 Text(
                     text = formatTimecode(currentPositionMs),
                     color = TextPrimary,
+                    fontSize = 13.sp,
                     fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
+                    fontWeight = FontWeight.Bold
                 )
                 Text(
                     text = " / ${formatTimecode(project.totalDurationMs)}",
                     color = TextMuted,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
                 )
             }
 
-            // Aspect Ratio badge & Safe guide button
+            // Aspect Ratio badge & Safe margins toggle
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(6.dp),
                     color = StudioSurface,
                     modifier = Modifier
                         .clickable { onAspectRatioClick() }
-                        .border(1.dp, StudioBorder, RoundedCornerShape(12.dp))
-                        .testTag("aspect_ratio_pill")
+                        .border(1.dp, StudioBorder, RoundedCornerShape(6.dp))
+                        .testTag("canvas_aspect_button")
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.AspectRatio,
                             contentDescription = "Aspect Ratio",
                             tint = StudioCyan,
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(12.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
@@ -200,15 +214,106 @@ fun CanvasPreview(
                     .clickable { onTogglePlay() },
                 contentAlignment = Alignment.Center
             ) {
-                // Background video frame thumbnail
-                val coverRes = project.coverDrawableRes ?: R.drawable.sample_thumb_cyber_1791582067290
-                Image(
-                    painter = painterResource(id = coverRes),
-                    contentDescription = "Video Frame",
-                    contentScale = ContentScale.Crop,
-                    colorFilter = colorFilter,
-                    modifier = Modifier.fillMaxSize()
-                )
+                // Active video clip at current timeline position
+                val activeVideoClip = remember(project.tracks, currentPositionMs) {
+                    project.tracks.find { it.type == TrackType.VIDEO_MAIN }
+                        ?.clips
+                        ?.find { currentPositionMs in it.startInTimelineMs..(it.startInTimelineMs + it.durationMs) }
+                        ?: project.tracks.find { it.type == TrackType.VIDEO_MAIN }?.clips?.firstOrNull()
+                }
+                val realVideoUri = activeVideoClip?.uriString ?: project.coverUriString
+                val hasAnyClips = project.tracks.any { it.clips.isNotEmpty() }
+
+                if (realVideoUri != null) {
+                    // Real hardware-accelerated video player with TextureView
+                    RealVideoSurfacePlayer(
+                        uriString = realVideoUri,
+                        isPlaying = isPlaying,
+                        currentPositionMs = currentPositionMs,
+                        clipStartTimelineMs = activeVideoClip?.startInTimelineMs ?: 0L,
+                        trimInMs = activeVideoClip?.trimInMs ?: 0L,
+                        playbackSpeed = activeVideoClip?.speed ?: 1.0f,
+                        volume = activeVideoClip?.volume ?: 1.0f,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else if (!hasAnyClips) {
+                    // CapCut-style empty canvas state: prompt user to import their phone video
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(StudioCyan.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.VideoLibrary,
+                                contentDescription = null,
+                                tint = StudioCyan,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "No Video Added Yet",
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            text = "Pick any video from your phone to start editing",
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Button(
+                            onClick = onAddMediaClick,
+                            colors = ButtonDefaults.buttonColors(containerColor = StudioCyan, contentColor = Color.Black),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Pick Video from Phone", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                        }
+                    }
+                } else {
+                    // Fallback to sample project thumbnail frame
+                    val coverRes = project.coverDrawableRes ?: R.drawable.sample_thumb_cyber_1791582067290
+                    Image(
+                        painter = painterResource(id = coverRes),
+                        contentDescription = "Video Frame",
+                        contentScale = ContentScale.Crop,
+                        colorFilter = colorFilter,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                // Live Color Grade Filter Overlay over the video view
+                if (project.colorGrade.lut != LutPreset.NONE || project.colorGrade.brightness != 0f || project.colorGrade.saturation != 1f || project.colorGrade.contrast != 1f) {
+                    val tintColor = when (project.colorGrade.lut) {
+                        LutPreset.CYBERPUNK -> Color(0xFF00E5FF).copy(alpha = 0.12f)
+                        LutPreset.TEAL_ORANGE -> Color(0xFFFF9100).copy(alpha = 0.12f)
+                        LutPreset.GOLDEN_HOUR -> Color(0xFFFFD700).copy(alpha = 0.14f)
+                        LutPreset.FILM_NOIR -> Color.Black.copy(alpha = 0.25f)
+                        LutPreset.MATRIX_GREEN -> Color(0xFF00E676).copy(alpha = 0.15f)
+                        LutPreset.PASTEL_DREAM -> Color(0xFFFF80AB).copy(alpha = 0.10f)
+                        else -> Color.Transparent
+                    }
+                    if (tintColor != Color.Transparent) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(tintColor)
+                        )
+                    }
+                }
 
                 // Optional Vignette overlay
                 if (project.colorGrade.vignette > 0f) {
@@ -237,7 +342,7 @@ fun CanvasPreview(
                 }
 
                 // Play / Pause central indicator flash when paused
-                if (!isPlaying) {
+                if (!isPlaying && hasAnyClips) {
                     Box(
                         modifier = Modifier
                             .size(52.dp)
@@ -257,59 +362,181 @@ fun CanvasPreview(
             }
         }
 
-        // Transport Controls Mini Bar
-        Row(
+        // Studio Playback Controls Bar
+        PlaybackTransportBar(
+            isPlaying = isPlaying,
+            onTogglePlay = onTogglePlay,
+            onStepFrame = onStepFrame,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = { onStepFrame(false) },
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.FastRewind,
-                    contentDescription = "Previous Frame",
-                    tint = TextSecondary,
-                    modifier = Modifier.size(20.dp)
-                )
+                .padding(horizontal = 16.dp, vertical = 6.dp)
+        )
+    }
+}
+
+/**
+ * Real Video Surface Player using TextureView & MediaPlayer.
+ * Works seamlessly with Jetpack Compose transforms and overlays.
+ */
+@Composable
+private fun RealVideoSurfacePlayer(
+    uriString: String,
+    isPlaying: Boolean,
+    currentPositionMs: Long,
+    clipStartTimelineMs: Long,
+    trimInMs: Long,
+    playbackSpeed: Float,
+    volume: Float,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var isPrepared by remember { mutableStateOf(false) }
+
+    DisposableEffect(uriString) {
+        val player = MediaPlayer()
+        isPrepared = false
+        try {
+            val uri = Uri.parse(uriString)
+            try {
+                context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                    player.setDataSource(pfd.fileDescriptor)
+                }
+            } catch (e: Exception) {
+                player.setDataSource(context, uri)
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            player.setOnPreparedListener { mp ->
+                isPrepared = true
+                mp.isLooping = true
+                try {
+                    mp.setVolume(volume, volume)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        val params = PlaybackParams().apply { speed = playbackSpeed.coerceIn(0.25f, 4.0f) }
+                        mp.playbackParams = params
+                    }
+                } catch (ignored: Exception) {}
+                if (isPlaying) mp.start()
+            }
+            player.setOnErrorListener { _, _, _ ->
+                // Suppress unhandled error popups gracefully
+                true
+            }
+            player.prepareAsync()
+            mediaPlayer = player
+        } catch (e: Exception) {
+            player.release()
+        }
 
-            Surface(
-                shape = CircleShape,
-                color = StudioCyan,
-                modifier = Modifier
-                    .size(42.dp)
-                    .clickable { onTogglePlay() }
-                    .testTag("play_pause_button")
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause" else "Play",
-                        tint = Color.Black,
-                        modifier = Modifier.size(24.dp)
-                    )
+        onDispose {
+            player.stop()
+            player.release()
+            mediaPlayer = null
+            isPrepared = false
+        }
+    }
+
+    AndroidView(
+        factory = { ctx ->
+            TextureView(ctx).apply {
+                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                    override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+                        try {
+                            mediaPlayer?.setSurface(Surface(surface))
+                        } catch (ignored: Exception) {}
+                    }
+                    override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
+                    override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+                        try {
+                            mediaPlayer?.setSurface(null)
+                        } catch (ignored: Exception) {}
+                        return true
+                    }
+                    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
                 }
             }
+        },
+        update = {
+            val player = mediaPlayer ?: return@AndroidView
+            if (!isPrepared) return@AndroidView
 
-            Spacer(modifier = Modifier.width(12.dp))
+            try {
+                if (isPlaying && !player.isPlaying) {
+                    player.start()
+                } else if (!isPlaying && player.isPlaying) {
+                    player.pause()
+                }
 
-            IconButton(
-                onClick = { onStepFrame(true) },
-                modifier = Modifier.size(36.dp)
-            ) {
+                val seekTarget = (trimInMs + (currentPositionMs - clipStartTimelineMs)).coerceAtLeast(0L)
+                val curPlayerPos = player.currentPosition.toLong()
+                if (kotlin.math.abs(curPlayerPos - seekTarget) > 800) {
+                    player.seekTo(seekTarget.toInt())
+                }
+            } catch (ignored: Exception) {}
+        },
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun PlaybackTransportBar(
+    isPlaying: Boolean,
+    onTogglePlay: () -> Unit,
+    onStepFrame: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Step back 1 frame
+        IconButton(
+            onClick = { onStepFrame(false) },
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.FastRewind,
+                contentDescription = "Previous Frame",
+                tint = TextSecondary,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        // Big Play/Pause Button
+        Surface(
+            shape = CircleShape,
+            color = StudioCyan,
+            modifier = Modifier
+                .size(44.dp)
+                .clickable { onTogglePlay() }
+                .testTag("play_pause_button")
+        ) {
+            Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = Icons.Default.FastForward,
-                    contentDescription = "Next Frame",
-                    tint = TextSecondary,
-                    modifier = Modifier.size(20.dp)
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = Color.Black,
+                    modifier = Modifier.size(26.dp)
                 )
             }
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        // Step forward 1 frame
+        IconButton(
+            onClick = { onStepFrame(true) },
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.FastForward,
+                contentDescription = "Next Frame",
+                tint = TextSecondary,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
@@ -319,7 +546,7 @@ private fun SubtitleOverlayView(subtitle: SubtitleItem) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(bottom = 36.dp, start = 20.dp, end = 20.dp),
+            .padding(bottom = 44.dp, start = 20.dp, end = 20.dp),
         contentAlignment = Alignment.BottomCenter
     ) {
         val style = subtitle.stylePreset
@@ -329,20 +556,15 @@ private fun SubtitleOverlayView(subtitle: SubtitleItem) {
         Surface(
             shape = RoundedCornerShape(8.dp),
             color = bgColor,
-            shadowElevation = 4.dp,
-            modifier = Modifier.border(
-                1.dp,
-                if (style == SubtitleStyle.NEON_CYAN) StudioCyan else Color.Transparent,
-                RoundedCornerShape(8.dp)
-            )
+            shadowElevation = 4.dp
         ) {
             Text(
                 text = subtitle.text,
                 color = textColor,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.ExtraBold,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Black,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
             )
         }
     }
@@ -380,7 +602,6 @@ fun formatTimecode(ms: Long): String {
 private fun createLutColorFilter(settings: ColorGradeSettings): ColorFilter? {
     val matrix = ColorMatrix()
 
-    // Contrast & Brightness
     val c = settings.contrast
     val b = settings.brightness * 255f
     val scale = c
@@ -394,10 +615,8 @@ private fun createLutColorFilter(settings: ColorGradeSettings): ColorFilter? {
     )
     matrix.set(ColorMatrix(cmValues))
 
-    // Preset color tints
     when (settings.lut) {
         LutPreset.CYBERPUNK -> {
-            // Boost cyan and magenta
             val cyber = ColorMatrix(
                 floatArrayOf(
                     1.2f, 0f, 0.3f, 0f, 10f,
@@ -409,7 +628,6 @@ private fun createLutColorFilter(settings: ColorGradeSettings): ColorFilter? {
             matrix.timesAssign(cyber)
         }
         LutPreset.TEAL_ORANGE -> {
-            // Orange highlights, teal shadows
             val tealOrange = ColorMatrix(
                 floatArrayOf(
                     1.3f, 0.1f, 0f, 0f, 15f,
@@ -432,7 +650,6 @@ private fun createLutColorFilter(settings: ColorGradeSettings): ColorFilter? {
             matrix.timesAssign(warm)
         }
         LutPreset.FILM_NOIR -> {
-            // Monochromatic grayscale
             val noir = ColorMatrix()
             noir.setToSaturation(0f)
             matrix.timesAssign(noir)

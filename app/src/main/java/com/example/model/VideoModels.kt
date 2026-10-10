@@ -87,6 +87,7 @@ data class MediaClip(
     val id: String = UUID.randomUUID().toString(),
     val type: ClipType = ClipType.VIDEO,
     val name: String,
+    val uriString: String? = null,
     val drawableResId: Int? = null,
     val durationMs: Long,
     val startInTimelineMs: Long,
@@ -123,6 +124,7 @@ data class Project(
     val subtitles: List<SubtitleItem> = emptyList(),
     val colorGrade: ColorGradeSettings = ColorGradeSettings(),
     val coverDrawableRes: Int? = null,
+    val coverUriString: String? = null,
     val totalDurationMs: Long = 15000L
 )
 

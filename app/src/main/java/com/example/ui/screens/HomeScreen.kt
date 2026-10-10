@@ -1,5 +1,10 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.ContentCopy
@@ -60,6 +66,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -92,19 +99,42 @@ fun HomeScreen(
     isCloudSyncing: Boolean,
     onOpenProject: (Project) -> Unit,
     onCreateNewProject: (String, AspectRatio) -> Unit,
+    onImportVideosAndCreateProject: (List<Uri>) -> Unit,
     onDuplicateProject: (String) -> Unit,
     onDeleteProject: (String) -> Unit,
     onOpenCloudSync: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var showNewProjectDialog by remember { mutableStateOf(false) }
+
+    // CapCut-style Gallery Video Picker
+    val videoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            uris.forEach { uri ->
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (ignored: Exception) {}
+            }
+            onImportVideosAndCreateProject(uris)
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = StudioDarkBg,
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { showNewProjectDialog = true },
+                onClick = {
+                    videoPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                    )
+                },
                 containerColor = StudioCyan,
                 contentColor = Color.Black,
                 shape = RoundedCornerShape(16.dp),
@@ -135,10 +165,15 @@ fun HomeScreen(
                 )
             }
 
-            // Hero Banner
+            // CapCut-Style Main Action Hub
             item {
-                StudioHeroBanner(
-                    onCreateClick = { showNewProjectDialog = true }
+                CapCutImportActionHub(
+                    onImportPhoneVideo = {
+                        videoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                        )
+                    },
+                    onBlankProject = { showNewProjectDialog = true }
                 )
             }
 
@@ -154,7 +189,7 @@ fun HomeScreen(
 
             // Trending Creator Templates
             item {
-                SectionHeader(title = "Trending Creator Templates", icon = Icons.Default.ViewCarousel)
+                SectionHeader(title = "Cinematic Sample Presets", icon = Icons.Default.ViewCarousel)
                 TemplatesCarousel(
                     onSelectTemplate = { title, aspect ->
                         onCreateNewProject(title, aspect)
@@ -169,7 +204,13 @@ fun HomeScreen(
 
             if (projects.isEmpty()) {
                 item {
-                    EmptyProjectsState(onCreateClick = { showNewProjectDialog = true })
+                    EmptyProjectsState(
+                        onImportClick = {
+                            videoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                            )
+                        }
+                    )
                 }
             } else {
                 items(projects, key = { it.id }) { project ->
@@ -210,7 +251,7 @@ private fun HomeTopBar(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(38.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(
                         Brush.linearGradient(
@@ -223,7 +264,7 @@ private fun HomeTopBar(
                     imageVector = Icons.Default.Movie,
                     contentDescription = null,
                     tint = Color.Black,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
             Spacer(modifier = Modifier.width(10.dp))
@@ -231,11 +272,11 @@ private fun HomeTopBar(
                 Text(
                     text = "NovaCut AI",
                     color = TextPrimary,
-                    fontSize = 18.sp,
+                    fontSize = 19.sp,
                     fontWeight = FontWeight.Black
                 )
                 Text(
-                    text = "PRO STUDIO SUITE",
+                    text = "PRO VIDEO STUDIO",
                     color = StudioCyan,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
@@ -251,22 +292,21 @@ private fun HomeTopBar(
             modifier = Modifier
                 .clickable { onOpenCloudSync() }
                 .border(1.dp, StudioBorder, RoundedCornerShape(20.dp))
-                .testTag("home_cloud_sync_pill")
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     imageVector = if (isCloudSyncing) Icons.Default.CloudSync else Icons.Default.CloudDone,
                     contentDescription = "Cloud Status",
-                    tint = if (isCloudSyncing) StudioCyan else StudioGreen,
-                    modifier = Modifier.size(16.dp)
+                    tint = if (isCloudSyncing) StudioAmber else StudioCyan,
+                    modifier = Modifier.size(14.dp)
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = if (isCloudSyncing) "Syncing..." else "Cloud Sync",
-                    color = TextPrimary,
+                    color = TextSecondary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -275,64 +315,142 @@ private fun HomeTopBar(
     }
 }
 
+/**
+ * CapCut-Style Hero Action Hub:
+ * 1. Big glowing "+ New Project" card that opens Phone Gallery to pick real videos!
+ * 2. Secondary "Blank Canvas" and "Preset" options.
+ */
 @Composable
-private fun StudioHeroBanner(onCreateClick: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = StudioSurface,
+private fun CapCutImportActionHub(
+    onImportPhoneVideo: () -> Unit,
+    onBlankProject: () -> Unit
+) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .border(1.dp, StudioCyan.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Box(
+        // Giant "+ New Project" Card (CapCut style)
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = StudioSurface,
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            StudioCyan.copy(alpha = 0.15f),
-                            StudioDarkBg
+                .clickable { onImportPhoneVideo() }
+                .border(1.5.dp, StudioCyan, RoundedCornerShape(16.dp))
+                .testTag("capcut_new_project_card")
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                StudioCyan.copy(alpha = 0.22f),
+                                StudioDarkBg
+                            )
                         )
                     )
-                )
-                .padding(18.dp)
-        ) {
-            Column {
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = StudioMagenta
+                    .padding(20.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "NEW: NEURAL AUTO-CUT & COLOR",
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Black,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(CircleShape)
+                            .background(StudioCyan),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "New Project",
+                            tint = Color.Black,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "New Project",
+                                color = TextPrimary,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = StudioMagenta
+                            ) {
+                                Text(
+                                    text = "SELECT VIDEO",
+                                    color = Color.White,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "Tap to pick videos from your phone gallery to start editing immediately",
+                            color = TextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Professional AI Video Editor",
-                    color = TextPrimary,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-                Text(
-                    text = "Multi-track precision, instant viral auto-captions, cinematic 4K export & seamless cloud sync across all your devices.",
-                    color = TextSecondary,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(vertical = 4.dp)
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                Button(
-                    onClick = onCreateClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = StudioCyan, contentColor = Color.Black),
-                    shape = RoundedCornerShape(10.dp)
+            }
+        }
+
+        // Quick secondary action pills
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = StudioSurfaceVariant,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onBlankProject() }
+                    .border(1.dp, StudioBorder, RoundedCornerShape(12.dp))
+            ) {
+                Row(
+                    modifier = Modifier.padding(vertical = 12.dp, horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Start Editing Now", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = StudioCyan, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("Blank Canvas", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("Custom aspect ratio", color = TextMuted, fontSize = 10.sp)
+                    }
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = StudioSurfaceVariant,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onImportPhoneVideo() }
+                    .border(1.dp, StudioBorder, RoundedCornerShape(12.dp))
+            ) {
+                Row(
+                    modifier = Modifier.padding(vertical = 12.dp, horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(imageVector = Icons.Default.Movie, contentDescription = null, tint = StudioMagenta, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("Import & Cut", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("From device storage", color = TextMuted, fontSize = 10.sp)
+                    }
                 }
             }
         }
@@ -361,18 +479,12 @@ private fun CloudSyncBannerWidget(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "☁️ NovaCloud Sync",
-                    color = TextPrimary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "${String.format("%.1f", usedGb)} GB / ${totalGb.toInt()} GB",
-                    color = StudioCyan,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.CloudSync, contentDescription = null, tint = StudioCyan, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Cloud Sync & Multi-Device Backup", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+                Text("${usedGb} GB / ${totalGb} GB", color = TextSecondary, fontSize = 11.sp)
             }
             Spacer(modifier = Modifier.height(6.dp))
             LinearProgressIndicator(
@@ -381,14 +493,8 @@ private fun CloudSyncBannerWidget(
                 trackColor = StudioDarkBg,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(5.dp)
-                    .clip(RoundedCornerShape(3.dp))
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Projects automatically synchronized across Mobile & Desktop Studio.",
-                color = TextMuted,
-                fontSize = 10.sp
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
             )
         }
     }
@@ -399,17 +505,12 @@ private fun SectionHeader(title: String, icon: androidx.compose.ui.graphics.vect
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(imageVector = icon, contentDescription = null, tint = StudioCyan, modifier = Modifier.size(18.dp))
+        Icon(imageVector = icon, contentDescription = null, tint = StudioCyan, modifier = Modifier.size(16.dp))
         Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = title,
-            color = TextPrimary,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Text(text = title, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -418,60 +519,42 @@ private fun TemplatesCarousel(
     onSelectTemplate: (String, AspectRatio) -> Unit
 ) {
     val templates = listOf(
-        TemplateItem("Viral Reel Hook", "9:16 Shorts", AspectRatio.ASPECT_9_16, R.drawable.sample_thumb_cyber_1791582067290),
-        TemplateItem("Cinematic Sunset Vlog", "16:9 Cinema", AspectRatio.ASPECT_16_9, R.drawable.sample_thumb_sunset_1791582093769),
-        TemplateItem("Podcast Auto-Sub", "9:16 Reel", AspectRatio.ASPECT_9_16, R.drawable.sample_thumb_cyber_1791582067290),
-        TemplateItem("Product Showcase", "1:1 Square", AspectRatio.ASPECT_1_1, R.drawable.sample_thumb_sunset_1791582093769)
+        Triple("Viral TikTok Hook", AspectRatio.ASPECT_9_16, R.drawable.sample_thumb_cyber_1791582067290),
+        Triple("YouTube Cinematic Vlog", AspectRatio.ASPECT_16_9, R.drawable.sample_thumb_sunset_1791582093769),
+        Triple("Instagram Aesthetic 4:5", AspectRatio.ASPECT_4_5, R.drawable.sample_thumb_cyber_1791582067290)
     )
 
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(templates) { item ->
+        items(templates) { (title, aspect, thumbRes) ->
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = StudioSurfaceVariant,
                 modifier = Modifier
-                    .width(150.dp)
-                    .clickable { onSelectTemplate(item.title, item.aspect) }
+                    .width(180.dp)
+                    .clickable { onSelectTemplate(title, aspect) }
                     .border(1.dp, StudioBorder, RoundedCornerShape(12.dp))
             ) {
                 Column {
                     Image(
-                        painter = painterResource(id = item.imageRes),
-                        contentDescription = item.title,
+                        painter = painterResource(id = thumbRes),
+                        contentDescription = title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(84.dp)
+                            .height(100.dp)
                     )
                     Column(modifier = Modifier.padding(8.dp)) {
-                        Text(
-                            text = item.title,
-                            color = TextPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            maxLines = 1
-                        )
-                        Text(
-                            text = item.tag,
-                            color = StudioCyan,
-                            fontSize = 10.sp
-                        )
+                        Text(text = title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                        Text(text = aspect.label, color = StudioCyan, fontSize = 10.sp)
                     }
                 }
             }
         }
     }
 }
-
-private data class TemplateItem(
-    val title: String,
-    val tag: String,
-    val aspect: AspectRatio,
-    val imageRes: Int
-)
 
 @Composable
 private fun ProjectCardItem(
@@ -497,102 +580,62 @@ private fun ProjectCardItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Thumbnail
-            val thumbRes = project.coverDrawableRes ?: R.drawable.sample_thumb_cyber_1791582067290
             Box(
                 modifier = Modifier
-                    .size(72.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(72.dp, 48.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
             ) {
+                val coverRes = project.coverDrawableRes ?: R.drawable.sample_thumb_cyber_1791582067290
                 Image(
-                    painter = painterResource(id = thumbRes),
-                    contentDescription = project.title,
+                    painter = painterResource(id = coverRes),
+                    contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = Color.Black.copy(alpha = 0.7f),
+                Text(
+                    text = formatTimecode(project.totalDurationMs),
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(4.dp)
-                ) {
-                    Text(
-                        text = formatTimecode(project.totalDurationMs).takeLast(5),
-                        color = Color.White,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
-                    )
-                }
+                        .padding(2.dp)
+                        .background(Color.Black.copy(alpha = 0.6f))
+                )
             }
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Details
+            // Project Info
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = project.title,
                     color = TextPrimary,
-                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
                     maxLines = 1
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = StudioDarkBg
-                    ) {
-                        Text(
-                            text = project.aspectRatio.label.takeWhile { it != ' ' },
-                            color = StudioCyan,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "${project.resolution.label} • ${project.frameRate.fps}fps",
-                        color = TextSecondary,
-                        fontSize = 10.sp
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.CloudDone,
-                        contentDescription = null,
-                        tint = StudioGreen,
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Cloud Synced (v${project.cloudVersion})",
-                        color = StudioGreen,
-                        fontSize = 10.sp
-                    )
+                    Text(text = project.aspectRatio.label.takeWhile { it != ' ' }, color = StudioCyan, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    Text(text = " • ${project.tracks.sumOf { it.clips.size }} clips", color = TextSecondary, fontSize = 10.sp)
                 }
             }
 
-            // More Options
+            // Options menu
             Box {
                 IconButton(onClick = { showMenu = true }) {
-                    Icon(imageVector = Icons.Default.MoreVert, contentDescription = "Options", tint = TextSecondary)
+                    Icon(imageVector = Icons.Default.MoreVert, contentDescription = "Options", tint = TextMuted)
                 }
                 DropdownMenu(
                     expanded = showMenu,
-                    onDismissRequest = { showMenu = false }
+                    onDismissRequest = { showMenu = false },
+                    modifier = Modifier.background(StudioSurface)
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Open in Studio") },
-                        onClick = {
-                            showMenu = false
-                            onClick()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Duplicate Project") },
+                        text = { Text("Duplicate Project", color = TextPrimary) },
                         onClick = {
                             showMenu = false
                             onDuplicate()
@@ -612,7 +655,7 @@ private fun ProjectCardItem(
 }
 
 @Composable
-private fun EmptyProjectsState(onCreateClick: () -> Unit) {
+private fun EmptyProjectsState(onImportClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -622,13 +665,15 @@ private fun EmptyProjectsState(onCreateClick: () -> Unit) {
         Icon(imageVector = Icons.Default.Movie, contentDescription = null, tint = TextMuted, modifier = Modifier.size(48.dp))
         Spacer(modifier = Modifier.height(10.dp))
         Text("No Projects Found", color = TextPrimary, fontWeight = FontWeight.Bold)
-        Text("Create your first video project to begin editing", color = TextSecondary, fontSize = 12.sp)
+        Text("Select any video from your phone to start editing like CapCut", color = TextSecondary, fontSize = 12.sp)
         Spacer(modifier = Modifier.height(16.dp))
         Button(
-            onClick = onCreateClick,
+            onClick = onImportClick,
             colors = ButtonDefaults.buttonColors(containerColor = StudioCyan, contentColor = Color.Black)
         ) {
-            Text("Create Project")
+            Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Pick Video from Phone", fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -643,7 +688,7 @@ private fun NewProjectDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create New Project", color = TextPrimary, fontWeight = FontWeight.Bold) },
+        title = { Text("Create Blank Project", color = TextPrimary, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(

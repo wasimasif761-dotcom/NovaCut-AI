@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -10,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CloudDone
@@ -36,6 +41,7 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.VideoCall
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -54,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -91,6 +98,23 @@ fun EditorScreen(
     modifier: Modifier = Modifier
 ) {
     val project = uiState.currentProject ?: return
+    val context = LocalContext.current
+
+    val mediaPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            uris.forEach { uri ->
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (ignored: Exception) {}
+            }
+            viewModel.importMediaFromUris(context, uris)
+        }
+    }
 
     BackHandler {
         if (uiState.activeDrawer != DrawerTab.NONE) {
@@ -135,6 +159,11 @@ fun EditorScreen(
                 onTogglePlay = { viewModel.togglePlay() },
                 onStepFrame = { viewModel.stepFrame(it) },
                 onAspectRatioClick = { showAspectDialog = true },
+                onAddMediaClick = {
+                    mediaPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                    )
+                },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -182,6 +211,11 @@ fun EditorScreen(
                 onDuplicateClip = { viewModel.duplicateSelectedClip() },
                 onOpenSpeed = { viewModel.openDrawer(DrawerTab.SPEED_RAMP) },
                 onOpenAudio = { viewModel.openDrawer(DrawerTab.AUDIO) },
+                onAddMedia = {
+                    mediaPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                    )
+                },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -190,6 +224,11 @@ fun EditorScreen(
         StudioBottomDock(
             activeDrawer = uiState.activeDrawer,
             onTabClick = { tab -> viewModel.openDrawer(tab) },
+            onAddMediaClick = {
+                mediaPickerLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                )
+            },
             onAspectClick = { showAspectDialog = true }
         )
     }
@@ -219,14 +258,17 @@ private fun StudioHeaderBar(
             .fillMaxWidth()
             .height(52.dp)
             .background(StudioSurface)
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.weight(1f, fill = false),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             IconButton(
                 onClick = onBack,
-                modifier = Modifier.testTag("editor_back_button")
+                modifier = Modifier.size(36.dp).testTag("editor_back_button")
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -234,49 +276,50 @@ private fun StudioHeaderBar(
                     tint = TextPrimary
                 )
             }
+            Spacer(modifier = Modifier.width(2.dp))
             Text(
                 text = title,
                 color = TextPrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                modifier = Modifier.width(110.dp)
+                maxLines = 1
             )
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             // Cloud Sync Indicator
-            IconButton(onClick = onCloudClick) {
+            IconButton(onClick = onCloudClick, modifier = Modifier.size(34.dp)) {
                 Icon(
                     imageVector = if (isSyncing) Icons.Default.CloudSync else Icons.Default.CloudDone,
                     contentDescription = "Cloud Status",
                     tint = if (isSyncing) StudioCyan else StudioGreen,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            // Undo / Redo
-            IconButton(onClick = { /* Undo simulated */ }) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Undo,
-                    contentDescription = "Undo",
-                    tint = TextSecondary,
                     modifier = Modifier.size(18.dp)
                 )
             }
 
-            // High Speed Export Button
+            // Undo
+            IconButton(onClick = { /* Undo simulated */ }, modifier = Modifier.size(34.dp)) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Undo,
+                    contentDescription = "Undo",
+                    tint = TextSecondary,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+
+            // High Speed Export Button (Prominent & Uncut)
             Button(
                 onClick = onExportClick,
                 colors = ButtonDefaults.buttonColors(containerColor = StudioCyan, contentColor = Color.Black),
                 shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier
                     .padding(start = 4.dp)
                     .testTag("export_studio_button")
             ) {
                 Icon(imageVector = Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Export", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("Export", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
             }
         }
     }
@@ -286,6 +329,7 @@ private fun StudioHeaderBar(
 private fun StudioBottomDock(
     activeDrawer: DrawerTab,
     onTabClick: (DrawerTab) -> Unit,
+    onAddMediaClick: () -> Unit,
     onAspectClick: () -> Unit
 ) {
     Row(
@@ -298,6 +342,14 @@ private fun StudioBottomDock(
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically
     ) {
+        DockItem(
+            icon = Icons.Default.Add,
+            label = "+ Media",
+            isActive = false,
+            accentColor = StudioCyan,
+            onClick = onAddMediaClick,
+            testTag = "dock_add_media"
+        )
         DockItem(
             icon = Icons.Default.AutoAwesome,
             label = "AI Magic",

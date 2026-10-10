@@ -88,6 +88,7 @@ fun MultiTrackTimeline(
     onDuplicateClip: () -> Unit,
     onOpenSpeed: () -> Unit,
     onOpenAudio: () -> Unit,
+    onAddMedia: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -107,7 +108,8 @@ fun MultiTrackTimeline(
             onDeleteClip = onDeleteClip,
             onDuplicateClip = onDuplicateClip,
             onOpenSpeed = onOpenSpeed,
-            onOpenAudio = onOpenAudio
+            onOpenAudio = onOpenAudio,
+            onAddMedia = onAddMedia
         )
 
         HorizontalDivider(color = StudioBorder, thickness = 1.dp)
@@ -186,7 +188,8 @@ private fun TimelineActionBar(
     onDeleteClip: () -> Unit,
     onDuplicateClip: () -> Unit,
     onOpenSpeed: () -> Unit,
-    onOpenAudio: () -> Unit
+    onOpenAudio: () -> Unit,
+    onAddMedia: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -201,6 +204,16 @@ private fun TimelineActionBar(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Add Media Button (Import from phone)
+            TimelineActionItem(
+                icon = Icons.Default.Add,
+                label = "+ Media",
+                tint = StudioCyan,
+                enabled = true,
+                onClick = onAddMedia,
+                testTag = "timeline_add_media_button"
+            )
+
             // Split Action Button
             TimelineActionItem(
                 icon = Icons.Default.ContentCut,

@@ -179,13 +179,35 @@ fun ExportScreen(
                     RenderCompletedCard(
                         renderStatus = renderStatus,
                         project = project,
-                        onShareSocial = { platform ->
-                            Toast.makeText(context, "Opening $platform direct export...", Toast.LENGTH_SHORT).show()
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "video/mp4"
-                                putExtra(Intent.EXTRA_TEXT, "Created with NovaCut AI Studio!")
+                        onPlayVideo = {
+                            val uriStr = renderStatus.shareableUriString
+                            if (!uriStr.isNullOrBlank()) {
+                                try {
+                                    val playUri = android.net.Uri.parse(uriStr)
+                                    val playIntent = Intent(Intent.ACTION_VIEW).apply {
+                                        setDataAndType(playUri, "video/mp4")
+                                        clipData = android.content.ClipData.newRawUri("NovaCut Video", playUri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(playIntent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Could not open video player: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share to $platform"))
+                        },
+                        onShareSocial = { platform ->
+                            val uriStr = renderStatus.shareableUriString
+                            if (!uriStr.isNullOrBlank()) {
+                                try {
+                                    val shareUri = android.net.Uri.parse(uriStr)
+                                    val chooser = com.example.media.RealVideoEngine.createShareIntent(context, shareUri, platform)
+                                    context.startActivity(chooser)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Could not share video: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                Toast.makeText(context, "Video saved in Movies/NovaCut", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     )
                 } else {
@@ -409,6 +431,7 @@ private fun RenderingProgressCard(renderStatus: RenderStatus) {
 private fun RenderCompletedCard(
     renderStatus: RenderStatus,
     project: Project?,
+    onPlayVideo: () -> Unit,
     onShareSocial: (String) -> Unit
 ) {
     Surface(
@@ -433,7 +456,7 @@ private fun RenderCompletedCard(
             }
             Spacer(modifier = Modifier.height(10.dp))
             Text("Render Complete!", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text("Ready to share with zero quality loss", color = TextSecondary, fontSize = 12.sp)
+            Text("Video saved to device gallery & ready to share", color = TextSecondary, fontSize = 12.sp)
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -444,14 +467,28 @@ private fun RenderCompletedCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text("Saved to:", color = TextMuted, fontSize = 10.sp)
+                    Text("Saved File:", color = TextMuted, fontSize = 10.sp)
                     Text(renderStatus.outputPath, color = StudioCyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Size: 42.8 MB • 1080p 60FPS • Stereo AAC", color = TextSecondary, fontSize = 11.sp)
+                    Text("Size: ${renderStatus.fileSizeFormatted} • 1080p 60FPS MP4", color = TextSecondary, fontSize = 11.sp)
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Play Video Now Button
+            Button(
+                onClick = onPlayVideo,
+                colors = ButtonDefaults.buttonColors(containerColor = StudioGreen, contentColor = Color.Black),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().testTag("play_exported_video_btn")
+            ) {
+                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Play Video Now", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
 
             Text("Publish Instantly to Social Platforms", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             Spacer(modifier = Modifier.height(10.dp))
@@ -459,8 +496,9 @@ private fun RenderCompletedCard(
             // Social media buttons row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                SocialShareButton(name = "WhatsApp", color = Color(0xFF25D366), onClick = { onShareSocial("WhatsApp") }, modifier = Modifier.weight(1f))
                 SocialShareButton(name = "TikTok", color = Color(0xFF00F2FE), onClick = { onShareSocial("TikTok") }, modifier = Modifier.weight(1f))
                 SocialShareButton(name = "Instagram", color = Color(0xFFE1306C), onClick = { onShareSocial("Instagram Reels") }, modifier = Modifier.weight(1f))
                 SocialShareButton(name = "YouTube", color = Color(0xFFFF0000), onClick = { onShareSocial("YouTube Shorts") }, modifier = Modifier.weight(1f))
@@ -469,10 +507,10 @@ private fun RenderCompletedCard(
             Spacer(modifier = Modifier.height(8.dp))
 
             Button(
-                onClick = { onShareSocial("System Share") },
+                onClick = { onShareSocial("Other Apps") },
                 colors = ButtonDefaults.buttonColors(containerColor = StudioCyan, contentColor = Color.Black),
                 shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().testTag("share_video_system_btn")
             ) {
                 Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
