@@ -1,0 +1,6 @@
+{
+  "name": "NovaCut AI",
+  "description": "Professional AI video editor with multi-track timeline, smart cut, auto-captions, cinematic LUTs, and cloud sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
